@@ -8,6 +8,9 @@ import Logger from "log/Logger";
 import NikkuCore from "core/NikkuCore";
 import CommandRegistry from "./CommandRegistry";
 import TriggerableCommand from "./TriggerableCommand";
+import OnMessageState from "state/OnMessageState";
+import ExecutableCommand from "./ExecutableCommand";
+import NikkuException from "exception/NikkuException";
 
 export default class CommandManager {
     /**
@@ -85,16 +88,16 @@ export default class CommandManager {
      * @param line - The channel message to evaluate.
      * @param id - The discord id of the user invoking the command.
      */
-    public parseLine(line: string, id: string): void {
+    public parseLine(line: string, id: string, msg: OnMessageState): void {
         for (const prefix of this.prefixManager.getPrefixes()) {
             if (line.split(" ")[0] === prefix) {
                 const commandString = this.extractCommand(line);
-                if (commandString === null) {
+                if (!commandString) {
                     return;
                 }
                 const command: Command = this.commandRegistry.getCommand(commandString);
                 if (command) {
-                    this.attemptExecution(command, this.extractArguments(line, command.getArgLength()), id).catch((err) => {
+                    this.attemptExecution(command, this.extractArguments(line, command.getArgLength()), id, msg).catch((err) => {
                         this.logger.verbose(
                             `${err.constructor.name}:Execution of "${command.getCommandString()}" failed`,
                         );
@@ -103,13 +106,19 @@ export default class CommandManager {
                 return;
             }
         }
-        this.triggerAction(id);
+        this.triggerAction(id, msg);
     }
 
-    private async attemptExecution(command: Command, args: string[], userId: string): Promise<void> {
+    private async attemptExecution(command: Command, args: string[], userId: string, msg: OnMessageState): Promise<void> {
         if (!this.core.getDbCore().isReady()) {
             this.logger.warn("Please wait until database connection has resolved.");
             return;
+        }
+        if (command.getArgLength() !== 0 && args.length !== command.getArgLength()) {
+            if (command instanceof ExecutableCommand) {
+                command.displayUsageText(msg);
+                throw new NikkuException(msg, "Invalid arguments.");
+            }
         }
         command.setArgs(args);
         const users: Mongoose.Model<Mongoose.Document, {}> = this.core.getDbCore().getUserModel();
@@ -117,14 +126,14 @@ export default class CommandManager {
         if (user) {
             this.logger.info(`Executing command "${command.getCommandString()}".`);
             try {
-                await command.executeAction(this.core, user as any as DBUserSchema);
+                await command.executeAction(msg, user as any as DBUserSchema);
             } catch (err) {
                 throw err;
             }
         } else {
             this.logger.info(`Executing command "${command.getCommandString()}". NO_REG_USER.`);
             try {
-                command.executeActionNoUser(this.core);
+                command.executeActionNoUser(msg);
             } catch (err) {
                 throw err;
             }
@@ -157,27 +166,26 @@ export default class CommandManager {
      * Attempt to invoke the action by testing if the trigger conditions are met.
      * @param id - The discord id of the user invoking the command.
      */
-    public triggerAction(userId: string): void {
+    public triggerAction(userId: string, msg: OnMessageState): void {
         const users: Mongoose.Model<Mongoose.Document, {}> = this.core.getDbCore().getUserModel();
         for (const pair of this.commandRegistry.getCommandMap().entries()) {
             if (pair[1] instanceof TriggerableCommand) {
                 const command: TriggerableCommand = pair[1] as TriggerableCommand;
-                command.tryTrigger(this.core).then((status: boolean) => {
+                command.tryTrigger(msg).then((status: boolean) => {
                     if (status) {
                         users.findOne({id: userId}).then((user: Mongoose.Document) => {
-                            if (user) {
-                                this.logger.info(`Triggering auto command "${command.constructor.name}". NO_WARN.`);
-                                command.executeActionNoWarning(this.core, user as any as DBUserSchema);
-                            } else {
-                                this.logger.info(`Triggering auto command "${command.constructor.name}". NO_REG_USER.`);
-                                try {
-                                    command.executeActionNoUser(this.core);
-                                } catch (err) {
-                                    this.logger.verbose(
-                                        `Auto execution of "${command.constructor.name}"` +
-                                        `failed, ${err.constructor.name}.`,
-                                    );
+                            try {
+                                if (user) {
+                                    this.logger.info(`Triggering auto command "${command.constructor.name}". NO_WARN.`);
+                                    command.executeActionNoWarning(msg, user as any as DBUserSchema);
                                 }
+                                else {
+                                    this.logger.info(`Triggering auto command "${command.constructor.name}". NO_REG_USER.`);
+                                    command.executeActionNoUser(msg);
+                                }
+                            } catch (err) {
+                                this.logger.verbose(`Auto execution of "${command.constructor.name}"` +
+                                    `failed, ${err.constructor.name}.`);
                             }
                         });
                     }

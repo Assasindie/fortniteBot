@@ -7,6 +7,7 @@ import NikkuException from "exception/NikkuException";
 import NikkuCore from "core/NikkuCore";
 import AccessLevel from "user/AccessLevel";
 import IHasAction from "action/IHasAction";
+import OnMessageState from "state/OnMessageState";
 
 export default class Command implements IHasAction {
     protected logger: winston.Logger = new Logger(this.constructor.name).getLogger();
@@ -36,20 +37,17 @@ export default class Command implements IHasAction {
 
     private description: string;
 
-    private helperText: string;
-
     /**
      * @classdesc Base command class for the bot.
      * @param commandString - The string required to execute this command.
      * @param accessLevel - The required access level to execute this command.
      * @param action - The action to execute.
      */
-    public constructor(accessLevel: AccessLevel, argLength: number, description?: string, helperText?: string) {
+    public constructor(accessLevel: AccessLevel, argLength: number, description?: string) {
         this.action = this.setCustomAction();
         this.accessLevel = accessLevel;
         this.argLength = argLength;
         this.description = description;
-        this.helperText = helperText;
     }
 
     /**
@@ -68,14 +66,14 @@ export default class Command implements IHasAction {
      * Execute the action provided by this command.
      * @param user - The user attempting to execute this command.
      */
-    public async executeAction(core: NikkuCore, user?: DBUserSchema): Promise<void> {
+    public async executeAction(msg: OnMessageState, user?: DBUserSchema): Promise<void> {
         if (user.accessLevel < this.accessLevel) {
-            throw new UnauthorizedCommandException(core.getCoreState(), this, user);
+            throw new UnauthorizedCommandException(msg, this, user);
         }
         try {
-            const status = await this.action.execute(core.getCoreState(), this.args);
+            const status = await this.action.execute(msg, this.args);
             if (!status) {
-                throw new NikkuException(core.getCoreState(), "Failed execution.");
+                throw new NikkuException(msg, "Failed execution.");
             }
         } catch (err) {
             throw err;
@@ -83,16 +81,16 @@ export default class Command implements IHasAction {
 
     }
 
-    public async executeActionNoUser(core: NikkuCore): Promise<void> {
+    public async executeActionNoUser(msg: OnMessageState): Promise<void> {
         const tempUser = new DBUserSchema();
         if (AccessLevel.UNREGISTERED >= this.accessLevel) {
-            return await this.executeAction(core, tempUser);
+            return await this.executeAction(msg, tempUser);
         }
     }
 
-    public executeActionNoWarning(core: NikkuCore, user?: DBUserSchema): void {
+    public async executeActionNoWarning(msg: OnMessageState, user?: DBUserSchema): Promise<void> {
         if (user.accessLevel >= this.accessLevel) {
-            this.action.execute(core.getCoreState(), this.args);
+            await this.action.execute(msg, this.args);
         }
     }
 
@@ -122,9 +120,5 @@ export default class Command implements IHasAction {
 
     public setCustomAction(): Action {
         return;
-    }
-
-    public getHelperText(): string {
-        return this.helperText;
     }
 }
