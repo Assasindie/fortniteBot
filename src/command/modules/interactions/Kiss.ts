@@ -15,25 +15,7 @@ export default class Kiss extends ExecutableCommand {
 
     public setCustomAction(): Action {
         return new Action(async (state: OnMessageState) => {
-            try {
-                const userModel = DBUserSchema.getModel();
-                const userId = state.getMessageHandle().author.id;
-                if (state.getMessageHandle().mentions.everyone)  {
-                    state.getMessageHandle().channel.send("You cannot kiss everyone at once OwO.");
-                    return false;
-                }
-                const targetId = state.getMessageHandle().mentions.users.first().id;
-                if (userId === targetId) {
-                    state.getMessageHandle().channel.send("You cannot kiss yourself silly xD.");
-                    return false;
-                }
-                const dbUser = await userModel.getUserById(userId);
-                const dbTarget = await userModel.getUserById(targetId);
-                if (!dbTarget) {
-                    state.getMessageHandle().channel.send("Kissing Target is not registered ♥!.");
-                    return false;
-                }
-                state.getMessageHandle().channel.send(`<@!${userId}> ( ˘ ³˘)♥  <@!${targetId}> `);
+            state.getMessageHandle().channel.reply(`( ˘ ³˘)♥ from <@!${state.getMessageHandle().author.id}>`);
                 return true;
             } catch (err) {
                 this.logger.warn(err);
