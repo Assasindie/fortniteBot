@@ -17,10 +17,6 @@ export default class Kiss extends ExecutableCommand {
         return new Action(async (state: OnMessageState) => {
             state.getMessageHandle().channel.reply(`( ˘ ³˘)♥ from <@!${state.getMessageHandle().author.id}>`);
                 return true;
-            } catch (err) {
-                this.logger.warn(err);
-                return false;
-            }
         });
     }
 }
